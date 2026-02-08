@@ -1,4 +1,5 @@
-import Dexie from "dexie";
+// src/db.ts
+import Dexie, { type Table } from "dexie";
 
 export type Deck = {
   id?: number;
@@ -10,27 +11,27 @@ export type Card = {
   id?: number;
   deckId: number;
 
-  frontImage: Blob;
-  backImage: Blob | null;
+  // ✅ lưu dạng string (dataURL) để iOS Safari ổn định
+  frontDataUrl: string; // luôn có sau khi import front
+  backDataUrl: string | null;
 
   intervalDays: number;
   dueAt: number;
-
-  lastSeenAt?: number;
-
   createdAt: number;
+  lastSeenAt?: number;
 };
 
 class AppDB extends Dexie {
-  decks!: Dexie.Table<Deck, number>;
-  cards!: Dexie.Table<Card, number>;
+  decks!: Table<Deck, number>;
+  cards!: Table<Card, number>;
 
   constructor() {
-    super("image_flashcards_db");
+    super("image-flashcards-db");
 
-    this.version(1).stores({
-      decks: "++id, name, createdAt",
-      cards: "++id, deckId, dueAt, createdAt, lastSeenAt"
+    // ✅ version mới: đổi Blob -> string fields
+    this.version(2).stores({
+      decks: "++id, createdAt",
+      cards: "++id, deckId, createdAt, dueAt, lastSeenAt"
     });
   }
 }
