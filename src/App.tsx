@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { db } from "./db";
 import type { Deck, Card } from "./db";
-import { resizeImageBlob, blobToObjectUrl } from "./image";
+import { resizeImageToDataUrl } from "./image";
 
 type Screen =
   | { name: "home" }
@@ -37,9 +37,7 @@ export default function App() {
             onPrimary={() => setScreen({ name: "decks" })}
             secondaryLabel={decks.length ? "Mở deck gần nhất" : undefined}
             onSecondary={
-              decks.length
-                ? () => setScreen({ name: "deck", deckId: decks[0].id! })
-                : undefined
+              decks.length ? () => setScreen({ name: "deck", deckId: decks[0].id! }) : undefined
             }
           />
 
@@ -151,12 +149,21 @@ function DecksScreen({
 
       <SectionTitle>Danh sách deck</SectionTitle>
       {decks.length === 0 ? (
-        <HintBox>Chưa có deck nào. Bấm <b>+ New</b> để tạo deck.</HintBox>
+        <HintBox>
+          Chưa có deck nào. Bấm <b>+ New</b> để tạo deck.
+        </HintBox>
       ) : (
         <List>
           {decks.map((d) => (
             <CardShell key={d.id}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10
+                }}
+              >
                 <div style={{ display: "grid", gap: 2 }}>
                   <div style={{ fontWeight: 900 }}>{d.name}</div>
                   <div style={{ fontSize: 12, opacity: 0.65 }}>Tap Open để vào deck</div>
@@ -208,13 +215,15 @@ function DeckDetailScreen({
     if (!files || files.length === 0) return;
     const now = Date.now();
 
-    const toAdd: any[] = [];
+    const toAdd: Omit<Card, "id">[] = [];
     for (const f of Array.from(files)) {
-      const front = await resizeImageBlob(f, 1280, 0.82);
+      const frontDataUrl = await resizeImageToDataUrl(f, 1280, 0.82);
       toAdd.push({
         deckId,
-        frontImage: front as Blob,
-        backImage: null,
+        frontDataUrl,
+        backDataUrl: null,
+        intervalDays: 1,
+        dueAt: now,
         createdAt: now,
         lastSeenAt: 0
       });
@@ -234,8 +243,8 @@ function DeckDetailScreen({
 
     for (let i = 0; i < n; i++) {
       const c = orderedOldToNew[i];
-      const back = await resizeImageBlob(filesArr[i], 1280, 0.82);
-      await db.cards.update((c as any).id, { backImage: back });
+      const backDataUrl = await resizeImageToDataUrl(filesArr[i], 1280, 0.82);
+      await db.cards.update(c.id!, { backDataUrl });
     }
 
     await load();
@@ -245,9 +254,8 @@ function DeckDetailScreen({
   async function deleteCard(card: Card) {
     const ok = confirm("Xoá thẻ này?");
     if (!ok) return;
-    const id = (card as any).id;
-    if (!id) return;
-    await db.cards.delete(id);
+    if (!card.id) return;
+    await db.cards.delete(card.id);
     await load();
   }
 
@@ -283,12 +291,14 @@ function DeckDetailScreen({
 
       <SectionTitle>Thẻ gần đây</SectionTitle>
       {cards.length === 0 ? (
-        <HintBox>Deck này chưa có thẻ. Bấm <b>Import FRONT</b> để thêm ảnh.</HintBox>
+        <HintBox>
+          Deck này chưa có thẻ. Bấm <b>Import FRONT</b> để thêm ảnh.
+        </HintBox>
       ) : (
         <>
           <ThumbGrid>
             {cards.slice(0, 12).map((c) => (
-              <ThumbTile key={(c as any).id} card={c} onDelete={() => void deleteCard(c)} />
+              <ThumbTile key={c.id} card={c} onDelete={() => void deleteCard(c)} />
             ))}
           </ThumbGrid>
           {cards.length > 12 && <SmallMuted>Đang hiển thị 12 thẻ gần nhất.</SmallMuted>}
@@ -323,7 +333,7 @@ function RandomScreen({
       return;
     }
 
-    all.sort((a, b) => ((a as any).lastSeenAt ?? 0) - ((b as any).lastSeenAt ?? 0));
+    all.sort((a, b) => (a.lastSeenAt ?? 0) - (b.lastSeenAt ?? 0));
 
     const poolSize = Math.min(all.length, Math.max(count * 4, 20));
     const pool = all.slice(0, poolSize);
@@ -343,8 +353,7 @@ function RandomScreen({
   const current = queue[idx];
 
   async function next() {
-    const id = current ? (current as any).id : null;
-    if (id) await db.cards.update(id, { lastSeenAt: Date.now() });
+    if (current?.id) await db.cards.update(current.id, { lastSeenAt: Date.now() });
     setIdx((v) => v + 1);
     setShowBack(false);
   }
@@ -366,8 +375,8 @@ function RandomScreen({
           </ProgressPill>
 
           <FlipCard
-            front={(current as any).frontImage}
-            back={(current as any).backImage}
+            frontDataUrl={current.frontDataUrl}
+            backDataUrl={current.backDataUrl}
             showBack={showBack}
             onToggle={() => setShowBack((v) => !v)}
           />
@@ -447,49 +456,28 @@ function RandomCard({
 }
 
 function FlipCard({
-  front,
-  back,
+  frontDataUrl,
+  backDataUrl,
   showBack,
   onToggle
 }: {
-  front: Blob;
-  back: Blob | null;
+  frontDataUrl: string;
+  backDataUrl: string | null;
   showBack: boolean;
   onToggle: () => void;
 }) {
-  const [frontSrc, setFrontSrc] = useState<string | null>(null);
-  const [backSrc, setBackSrc] = useState<string | null>(null);
-
-useEffect(() => {
-  const f = blobToObjectUrl(front);
-  const b = blobToObjectUrl(back);
-
-  setFrontSrc(f);
-  setBackSrc(b);
-
-  return () => {
-    if (f) URL.revokeObjectURL(f);
-    if (b) URL.revokeObjectURL(b);
-  };
-}, [front, back]);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [front, back]);
-
   return (
     <CardShell onClick={onToggle} style={{ cursor: "pointer" }}>
       <div style={{ display: "grid", gap: 10 }}>
         <div style={{ borderRadius: 18, overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)" }}>
           {!showBack ? (
-            frontSrc ? (
-              <img src={frontSrc} style={{ width: "100%", display: "block" }} />
+            frontDataUrl ? (
+              <img src={frontDataUrl} style={{ width: "100%", display: "block" }} />
             ) : (
               <Placeholder>Không có ảnh mặt 1</Placeholder>
             )
-          ) : backSrc ? (
-            <img src={backSrc} style={{ width: "100%", display: "block" }} />
+          ) : backDataUrl ? (
+            <img src={backDataUrl} style={{ width: "100%", display: "block" }} />
           ) : (
             <Placeholder>Chưa có ảnh mặt 2 (Back). Vào Deck để Assign BACK.</Placeholder>
           )}
@@ -502,21 +490,7 @@ useEffect(() => {
 }
 
 function ThumbTile({ card, onDelete }: { card: Card; onDelete: () => void }) {
-  const [src, setSrc] = useState<string | null>(null);
-
-useEffect(() => {
-  const u = blobToObjectUrl((card as any).frontImage);
-  setSrc(u);
-
-  return () => {
-    if (u) URL.revokeObjectURL(u);
-  };
-}, [card.frontImage]);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [card]);
+  const src = card.frontDataUrl || null;
 
   return (
     <div style={thumbStyle}>
@@ -540,7 +514,7 @@ useEffect(() => {
 
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
         <SmallMuted>Back</SmallMuted>
-        <SmallMuted>{(card as any).backImage ? "✅" : "❌"}</SmallMuted>
+        <SmallMuted>{card.backDataUrl ? "✅" : "❌"}</SmallMuted>
       </div>
     </div>
   );
@@ -550,7 +524,13 @@ function FileButton({ label, onFiles }: { label: string; onFiles: (files: FileLi
   return (
     <label style={fileBtnStyle}>
       {label}
-      <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => onFiles(e.target.files)} />
+      <input
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => onFiles(e.target.files)}
+      />
     </label>
   );
 }
@@ -773,24 +753,6 @@ function CardShell({
 /* =========================
    Helpers
 ========================= */
-
-function blobToDataUrl(blob: Blob | null | undefined): Promise<string | null> {
-  return new Promise((resolve) => {
-    if (!blob) return resolve(null);
-    try {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-function isValidBlob(b: any): b is Blob {
-  return b && typeof b === "object" && typeof b.size === "number" && b.size > 0;
-}
 
 function formatDateVN(d: Date) {
   const weekdays = ["Chủ nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
