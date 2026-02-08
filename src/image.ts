@@ -1,11 +1,11 @@
 // src/image.ts
 
-// Resize ảnh để nhẹ + lưu vào IndexedDB
-export async function resizeImageBlob(
+// Resize ảnh rồi trả về dataURL (jpeg) để lưu vào IndexedDB ổn định trên iOS Safari
+export async function resizeImageToDataUrl(
   file: Blob,
   maxSide = 1280,
   quality = 0.82
-): Promise<Blob> {
+): Promise<string> {
   const img = await loadImage(file);
   const { w, h } = fitMax(img.width, img.height, maxSide);
 
@@ -14,54 +14,29 @@ export async function resizeImageBlob(
   canvas.height = h;
 
   const ctx = canvas.getContext("2d");
-  if (!ctx) return file as Blob;
+  if (!ctx) {
+    // fallback: đọc thẳng file -> dataURL (không resize)
+    return blobToDataUrl(file);
+  }
 
   ctx.drawImage(img, 0, 0, w, h);
 
-  // ưu tiên jpeg để nhẹ; nếu bạn cần giữ PNG trong suốt thì mình chỉnh thêm sau
-  const out: Blob = await new Promise((resolve) => {
-    canvas.toBlob(
-      (b) => resolve(b ?? (file as Blob)),
-      "image/jpeg",
-      quality
-    );
+  // Ưu tiên JPEG cho nhẹ + ổn định
+  const blob: Blob = await new Promise((resolve) => {
+    canvas.toBlob((b) => resolve(b ?? file), "image/jpeg", quality);
   });
 
-  return out;
+  return blobToDataUrl(blob);
 }
 
-// ✅ FIX SAFARI / IndexedDB: hỗ trợ Blob + ArrayBuffer + TypedArray (kể cả SharedArrayBuffer)
-export function blobToObjectUrl(blobLike: any): string | null {
-  if (!blobLike) return null;
-
-  // 1) Nếu là Blob/File chuẩn
-  try {
-    return URL.createObjectURL(blobLike as Blob);
-  } catch {}
-
-  // 2) Nếu là ArrayBuffer
-  try {
-    if (blobLike instanceof ArrayBuffer) {
-      return URL.createObjectURL(new Blob([blobLike]));
-    }
-  } catch {}
-
-  // 3) Nếu là TypedArray/DataView (ArrayBufferView) -> copy sang ArrayBuffer thường
-  try {
-    if (ArrayBuffer.isView(blobLike)) {
-      const view = blobLike as ArrayBufferView;
-
-      // copy bytes sang buffer mới (ArrayBuffer thường) để né SharedArrayBuffer
-      const copy = new Uint8Array(view.byteLength);
-      copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
-
-      return URL.createObjectURL(new Blob([copy]));
-    }
-  } catch {}
-
-  return null;
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
-
 
 /* ---------------- helpers ---------------- */
 
