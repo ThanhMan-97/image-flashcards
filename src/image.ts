@@ -30,30 +30,38 @@ export async function resizeImageBlob(
   return out;
 }
 
-// ✅ FIX SAFARI / IndexedDB: đừng check kiểu cứng, cứ thử createObjectURL
+// ✅ FIX SAFARI / IndexedDB: hỗ trợ Blob + ArrayBuffer + TypedArray (kể cả SharedArrayBuffer)
 export function blobToObjectUrl(blobLike: any): string | null {
   if (!blobLike) return null;
 
-  // 1) thử trực tiếp (đa số trường hợp OK)
+  // 1) Nếu là Blob/File chuẩn
   try {
     return URL.createObjectURL(blobLike as Blob);
   } catch {}
 
-  // 2) fallback nếu dữ liệu là ArrayBuffer/TypedArray
+  // 2) Nếu là ArrayBuffer
   try {
     if (blobLike instanceof ArrayBuffer) {
       return URL.createObjectURL(new Blob([blobLike]));
     }
-    if (ArrayBuffer.isView(blobLike)) {
-  // copy sang Uint8Array để tránh SharedArrayBuffer type error
-  const u8 = new Uint8Array(blobLike.buffer as ArrayBuffer);
-  return URL.createObjectURL(new Blob([u8]));
-}
+  } catch {}
 
+  // 3) Nếu là TypedArray/DataView (ArrayBufferView) -> copy sang ArrayBuffer thường
+  try {
+    if (ArrayBuffer.isView(blobLike)) {
+      const view = blobLike as ArrayBufferView;
+
+      // copy bytes sang buffer mới (ArrayBuffer thường) để né SharedArrayBuffer
+      const copy = new Uint8Array(view.byteLength);
+      copy.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+
+      return URL.createObjectURL(new Blob([copy]));
+    }
   } catch {}
 
   return null;
 }
+
 
 /* ---------------- helpers ---------------- */
 
