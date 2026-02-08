@@ -460,9 +460,10 @@ function FlipCard({
   const [frontSrc, setFrontSrc] = useState<string | null>(null);
   const [backSrc, setBackSrc] = useState<string | null>(null);
 
-  useEffect(() => {
+useEffect(() => {
   const f = blobToObjectUrl(front);
   const b = blobToObjectUrl(back);
+
   setFrontSrc(f);
   setBackSrc(b);
 
@@ -471,7 +472,6 @@ function FlipCard({
     if (b) URL.revokeObjectURL(b);
   };
 }, [front, back]);
-
 
     return () => {
       cancelled = true;
@@ -504,7 +504,7 @@ function FlipCard({
 function ThumbTile({ card, onDelete }: { card: Card; onDelete: () => void }) {
   const [src, setSrc] = useState<string | null>(null);
 
-  useEffect(() => {
+useEffect(() => {
   const u = blobToObjectUrl((card as any).frontImage);
   setSrc(u);
 
@@ -512,7 +512,6 @@ function ThumbTile({ card, onDelete }: { card: Card; onDelete: () => void }) {
     if (u) URL.revokeObjectURL(u);
   };
 }, [card.frontImage]);
-
 
     return () => {
       cancelled = true;
