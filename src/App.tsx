@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { db } from "./db";
 import type { Deck, Card } from "./db";
-import { resizeImageBlob } from "./image";
+import { resizeImageBlob, blobToObjectUrl } from "./image";
 
 type Screen =
   | { name: "home" }
@@ -461,15 +461,17 @@ function FlipCard({
   const [backSrc, setBackSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+  const f = blobToObjectUrl(front);
+  const b = blobToObjectUrl(back);
+  setFrontSrc(f);
+  setBackSrc(b);
 
-    (async () => {
-      const f = isValidBlob(front) ? await blobToDataUrl(front) : null;
-      const b = isValidBlob(back) ? await blobToDataUrl(back) : null;
-      if (cancelled) return;
-      setFrontSrc(f);
-      setBackSrc(b);
-    })();
+  return () => {
+    if (f) URL.revokeObjectURL(f);
+    if (b) URL.revokeObjectURL(b);
+  };
+}, [front, back]);
+
 
     return () => {
       cancelled = true;
@@ -503,13 +505,14 @@ function ThumbTile({ card, onDelete }: { card: Card; onDelete: () => void }) {
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+  const u = blobToObjectUrl((card as any).frontImage);
+  setSrc(u);
 
-    (async () => {
-      const front = (card as any).frontImage;
-      const s = isValidBlob(front) ? await blobToDataUrl(front) : null;
-      if (!cancelled) setSrc(s);
-    })();
+  return () => {
+    if (u) URL.revokeObjectURL(u);
+  };
+}, [card.frontImage]);
+
 
     return () => {
       cancelled = true;
